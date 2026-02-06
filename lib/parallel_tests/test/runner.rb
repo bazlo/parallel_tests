@@ -57,6 +57,8 @@ module ParallelTests
               tests, runtimes(tests, options),
               options.merge(allowed_missing: (options[:allowed_missing_percent] || 50) / 100.0)
             )
+          when :queue
+            sort_by_filesize(tests)
           when nil
             # use recorded test runtime if we got enough data
             runtimes = begin
