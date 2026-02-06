@@ -71,20 +71,31 @@ module ParallelTests
     def run_tests_in_parallel(num_processes, options)
       test_results = nil
 
-      run_tests_proc = -> do
-        groups = @runner.tests_in_groups(options[:files], num_processes, options)
-        groups.reject!(&:empty?)
-
-        if options[:only_group]
-          groups = options[:only_group].map { |i| groups[i - 1] }.compact
-          num_processes = 1
+      run_tests_proc = if options[:group_by] == :queue
+        -> do
+          require 'parallel_tests/rspec/queue_runner'
+          test_files = @runner.send(:find_tests, options[:files], options)
+          queue_runner = ParallelTests::RSpec::QueueRunner.new(test_files, num_processes, options, @runner)
+          report_number_of_tests_for_queue(num_processes, test_files) unless options[:quiet]
+          test_results = queue_runner.run(self)
+          report_results(test_results, options) unless options[:quiet]
         end
+      else
+        -> do
+          groups = @runner.tests_in_groups(options[:files], num_processes, options)
+          groups.reject!(&:empty?)
 
-        report_number_of_tests(groups) unless options[:quiet]
-        test_results = execute_in_parallel(groups, groups.size, options) do |group, index|
-          run_tests(group, index, num_processes, options)
+          if options[:only_group]
+            groups = options[:only_group].map { |i| groups[i - 1] }.compact
+            num_processes = 1
+          end
+
+          report_number_of_tests(groups) unless options[:quiet]
+          test_results = execute_in_parallel(groups, groups.size, options) do |group, index|
+            run_tests(group, index, num_processes, options)
+          end
+          report_results(test_results, options) unless options[:quiet]
         end
-        report_results(test_results, options) unless options[:quiet]
       end
 
       if options[:quiet]
@@ -175,6 +186,11 @@ module ParallelTests
       puts "#{pluralize(num_processes, 'process')} for #{pluralize(num_tests, name)}, ~ #{pluralize(tests_per_process, name)} per process"
     end
 
+    def report_number_of_tests_for_queue(num_processes, test_files)
+      name = @runner.test_file_name
+      puts "#{pluralize(num_processes, 'process')} for #{pluralize(test_files.size, name)} via queue"
+    end
+
     def pluralize(n, singular)
       if n == 1
         "1 #{singular}"
@@ -221,6 +237,7 @@ module ParallelTests
             filesize - by size of the file
             runtime - info from runtime log
             default - runtime when runtime log is filled otherwise filesize
+            queue - (rspec only) dynamic work queue, distributes files at runtime
           TEXT
         ) { |type| options[:group_by] = type.to_sym }
 
@@ -382,6 +399,14 @@ module ParallelTests
 
       if options[:failure_exit_code] && options[:highest_exit_status]
         raise "Can't pass --failure-exit-code and --highest-exit-status"
+      end
+
+      if options[:group_by] == :queue
+        raise '--group-by queue is only supported for the RSpec runner' unless @runner == ParallelTests::RSpec::Runner
+        raise '--group-by queue is not compatible with --only-group' if options[:only_group]
+        raise '--group-by queue is not compatible with --specify-groups' if options[:specify_groups]
+        raise '--group-by queue is not compatible with --single-process' if options[:single_process]
+        raise '--group-by queue is not compatible with --test-file-limit' if options[:test_file_limit]
       end
 
       options
