@@ -156,6 +156,42 @@ describe ParallelTests::CLI do
       end
     end
 
+    context "group-by queue" do
+      it "sets group_by to :queue" do
+        expect(call(["test", "--group-by", "queue", "-t", "rspec"])).to include(group_by: :queue)
+      end
+
+      it "raises for non-rspec runners" do
+        expect do
+          call(["test", "--group-by", "queue"])
+        end.to raise_error(RuntimeError, /only supported for the RSpec runner/)
+      end
+
+      it "raises when combined with --only-group" do
+        expect do
+          call(["test", "--group-by", "queue", "--only-group", "1", "-t", "rspec"])
+        end.to raise_error(RuntimeError)
+      end
+
+      it "raises when combined with --specify-groups" do
+        expect do
+          call(["test", "--group-by", "queue", "--specify-groups", "a|b", "-t", "rspec"])
+        end.to raise_error(RuntimeError, /not compatible with --specify-groups/)
+      end
+
+      it "raises when combined with --single-process" do
+        expect do
+          call(["test", "--group-by", "queue", "--single", "pattern", "-t", "rspec"])
+        end.to raise_error(RuntimeError, /not compatible with --single-process/)
+      end
+
+      it "raises when combined with --test-file-limit" do
+        expect do
+          call(["test", "--group-by", "queue", "--test-file-limit", "5", "-t", "rspec"])
+        end.to raise_error(RuntimeError, /not compatible with --test-file-limit/)
+      end
+    end
+
     context "when the -- option separator is used" do
       it "interprets arguments as files/directories" do
         expect(call(['--', 'test'])).to eq(files: ['test'])
